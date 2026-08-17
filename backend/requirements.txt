@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+websockets
+yfinance
+pandas
+numpy
+python-frontmatter
+pyyaml
+aiofiles
+requests
+pytrends

@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live Trading Dashboard</title>
+  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="/static/chart.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --green: #3fb950;
+      --red: #f85149;
+      --yellow: #d29922;
+      --blue: #58a6ff;
+      --purple: #bc8cff;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+
+        /* Tabs */
+    .tab-bar {
+      display: flex; gap: 2px; padding: 0 24px;
+      border-bottom: 1px solid var(--border); background: var(--surface);
+    }
+    .tab-btn {
+      padding: 10px 18px; font-size: 13px; font-weight: 500; cursor: pointer;
+      border: none; background: none; color: var(--muted); border-bottom: 2px solid transparent;
+      transition: color .15s, border-color .15s;
+    }
+    .tab-btn.active { color: var(--text); border-bottom-color: var(--blue); }
+    .tab-btn:hover { color: var(--text); }
+    .tab-pane { display: none; height: 100%; }
+    .tab-pane.active { display: flex; flex-direction: column; height: 100%; }
+
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 24px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    header h1 { font-size: 18px; font-weight: 600; color: var(--text); }
+    #conn-status { font-size: 12px; padding: 3px 10px; border-radius: 20px; font-weight: 500; }
+    #conn-status.connected { background: rgba(63,185,80,0.15); color: var(--green); }
+    #conn-status.disconnected { background: rgba(248,81,73,0.15); color: var(--red); }
+
+    .layout { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 53px); }
+
+    /* Sidebar */
+    #sidebar {
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      display: flex; flex-direction: column;
+    }
+    .sidebar-section { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .sidebar-section h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 8px; }
+
+    .strategy-card {
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
+      cursor: pointer; transition: background .15s;
+    }
+    .strategy-card:hover, .strategy-card.active { background: rgba(88,166,255,.07); }
+    .strategy-card .sc-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+    .strategy-card .sc-name { font-weight: 600; font-size: 13px; color: var(--text); }
+    .strategy-card .sc-ticker { font-size: 12px; color: var(--blue); font-weight: 600; }
+    .strategy-card .sc-price { font-size: 18px; font-weight: 700; }
+    .strategy-card .sc-meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .sc-indicators { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+    .sc-indicator { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,.06); color: var(--muted); }
+    .signal-badge {
+      font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+    }
+    .signal-BUY { background: rgba(63,185,80,.2); color: var(--green); }
+    .signal-SELL { background: rgba(248,81,73,.2); color: var(--red); }
+    .signal-— { background: rgba(139,148,158,.1); color: var(--muted); }
+    .pos-badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: rgba(188,140,255,.15); color: var(--purple); }
+
+    /* Main content */
+    #main { display: flex; flex-direction: column; overflow: hidden; }
+
+    #chart-container {
+      flex: 1; min-height: 0;
+      background: var(--bg);
+      position: relative;
+    }
+    #chart { width: 100%; height: 100%; }
+
+    #chart-header {
+      position: absolute; top: 12px; left: 16px; z-index: 10;
+      display: flex; gap: 16px; align-items: baseline;
+    }
+    #chart-ticker { font-size: 22px; font-weight: 700; color: var(--text); }
+    #chart-price { font-size: 22px; font-weight: 700; }
+    #chart-strategy-name { font-size: 13px; color: var(--muted); }
+
+    /* Trade feed */
+    #trade-feed {
+      height: 200px; border-top: 1px solid var(--border);
+      overflow-y: auto; padding: 0;
+    }
+    .feed-header {
+      padding: 8px 16px; font-size: 11px; text-transform: uppercase;
+      letter-spacing: .08em; color: var(--muted); border-bottom: 1px solid var(--border);
+      background: var(--surface); position: sticky; top: 0; z-index: 1;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .trade-row {
+      display: grid; grid-template-columns: 80px 60px 90px 1fr 80px 80px;
+      padding: 8px 16px; border-bottom: 1px solid var(--border);
+      font-size: 12px; align-items: center;
+      animation: fadeIn .3s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; } }
+    .trade-row .action-BUY { color: var(--green); font-weight: 700; }
+    .trade-row .action-SELL { color: var(--red); font-weight: 700; }
+    .trade-row .pnl-pos { color: var(--green); }
+    .trade-row .pnl-neg { color: var(--red); }
+    .trade-row .reason-pill {
+      font-size: 10px; padding: 1px 6px; border-radius: 10px;
+      background: rgba(255,255,255,.06); color: var(--muted);
+    }
+
+    #no-strategy { display: flex; align-items: center; justify-content: center; flex: 1; color: var(--muted); font-size: 16px; }
+
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .error-pill { font-size: 10px; color: var(--red); }
+
+    /* Simulation */
+    .sim-card { background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;transition:border-color .2s; }
+    .sim-card.in-position { border-color:var(--purple); }
+    .sim-card.profit { border-color:var(--green); }
+    .sim-card.loss { border-color:var(--red); }
+    .sim-card .sc-top { display:flex;justify-content:space-between;align-items:center;margin-bottom:8px; }
+    .sim-card .sc-equity { font-size:24px;font-weight:700;margin-bottom:4px; }
+    .sim-card .sc-row { display:flex;gap:8px;flex-wrap:wrap;margin-top:6px; }
+    .sim-chip { font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(255,255,255,.06);color:var(--muted); }
+    .sim-trade-row { display:grid;grid-template-columns:70px 55px 80px 1fr 70px 70px 80px;padding:7px 16px;border-bottom:1px solid var(--border);font-size:12px;align-items:center;animation:fadeIn .3s; }
+    .sim-summary-card { background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;text-align:center; }
+    .sim-summary-card .val { font-size:20px;font-weight:700;margin-top:4px; }
+    .sim-summary-card .lbl { font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em; }
+
+    /* Evolution */
+    #evo-pane { padding: 20px 24px; overflow-y: auto; gap: 20px; }
+    .evo-controls {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+      padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    }
+    .evo-controls label { font-size: 12px; color: var(--muted); }
+    .evo-controls select, .evo-controls input {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 10px; border-radius: 6px; font-size: 13px;
+    }
+    .evo-btn {
+      padding: 7px 16px; border-radius: 6px; border: none; cursor: pointer;
+      font-size: 13px; font-weight: 600; transition: opacity .15s;
+    }
+    .evo-btn:hover { opacity: .85; }
+    .evo-btn.seed  { background: var(--blue); color: #000; }
+    .evo-btn.run   { background: var(--green); color: #000; }
+    .evo-btn.auto  { background: var(--purple); color: #000; }
+    .evo-btn.stop  { background: var(--yellow); color: #000; }
+    .evo-btn.reset { background: rgba(248,81,73,.2); color: var(--red); border: 1px solid var(--red); }
+
+    .evo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .evo-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 16px;
+    }
+    .evo-card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 12px; }
+    #fitness-chart-wrap { height: 200px; }
+
+    .bot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+    .bot-card {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px; font-size: 12px; transition: border-color .2s;
+    }
+    .bot-card.best { border-color: var(--green); }
+    .bot-card.dead { opacity: .35; }
+    .bot-card .bot-id { font-size: 10px; color: var(--muted); margin-bottom: 6px; }
+    .bot-card .bot-fitness { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+    .bot-card .bot-fitness.pos { color: var(--green); }
+    .bot-card .bot-fitness.neg { color: var(--red); }
+    .bot-card .bot-genome { display: flex; flex-wrap: wrap; gap: 3px; }
+    .bot-card .gene { font-size: 10px; padding: 2px 5px; border-radius: 3px; background: rgba(255,255,255,.06); color: var(--muted); }
+    .gen-stat { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+    .gen-stat:last-child { border-bottom: none; }
+    #evo-status { font-size: 13px; color: var(--muted); padding: 4px 0; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Live Trading Dashboard</h1>
+  <span id="conn-status" class="disconnected">● Disconnected</span>
+</header>
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="live">Live</button>
+  <button class="tab-btn" data-tab="simulation">📈 Simulation</button>
+  <button class="tab-btn" data-tab="evolution">🧬 Evolution</button>
+</div>
+
+<div class="layout" id="tab-live" style="display:grid">
+  <div id="sidebar">
+    <div class="sidebar-section">
+      <h2>Active Strategies</h2>
+    </div>
+    <div id="strategy-list"></div>
+  </div>
+
+  <div id="main">
+    <div id="chart-container">
+      <div id="chart-header">
+        <span id="chart-ticker">—</span>
+        <span id="chart-price">—</span>
+        <span id="chart-strategy-name"></span>
+      </div>
+      <div id="chart"></div>
+      <div id="no-strategy">← Select a strategy</div>
+    </div>
+    <div id="trade-feed">
+      <div class="feed-header">
+        <span>Trade Feed</span>
+        <span id="trade-count" style="color:var(--text)">0 trades</span>
+      </div>
+      <div id="feed-rows"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const WS_URL = `ws://${location.host}/ws`;
+let ws = null;
+let strategies = {};
+let activeId = null;
+let chart = null;
+let candleSeries = null;
+let lineSeries = null;
+let tradeCount = 0;
+
+// ── Charting ──────────────────────────────────────────────────────────────────
+function initChart() {
+  const container = document.getElementById('chart');
+  chart = LightweightCharts.createChart(container, {
+    layout: { background: { color: '#0d1117' }, textColor: '#8b949e' },
+    grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: '#30363d' },
+    timeScale: { borderColor: '#30363d', timeVisible: true },
+  });
+  candleSeries = chart.addCandlestickSeries({
+    upColor: '#3fb950', downColor: '#f85149',
+    borderUpColor: '#3fb950', borderDownColor: '#f85149',
+    wickUpColor: '#3fb950', wickDownColor: '#f85149',
+  });
+  window.addEventListener('resize', () => {
+    chart.applyOptions({ width: container.offsetWidth, height: container.offsetHeight });
+  });
+  setTimeout(() => chart.applyOptions({ width: container.offsetWidth, height: container.offsetHeight }), 50);
+}
+
+async function loadChart(ticker) {
+  try {
+    const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=6mo`);
+    const data = await res.json();
+    const result = data?.chart?.result?.[0];
+    if (!result) return;
+    const times = result.timestamp;
+    const ohlcv = result.indicators.quote[0];
+    const bars = times.map((t, i) => ({
+      time: t,
+      open: ohlcv.open[i],
+      high: ohlcv.high[i],
+      low: ohlcv.low[i],
+      close: ohlcv.close[i],
+    })).filter(b => b.open && b.high && b.low && b.close);
+    candleSeries.setData(bars);
+    chart.timeScale().fitContent();
+  } catch (e) {
+    console.warn('chart load failed', e);
+  }
+}
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+function connect() {
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => setStatus(true);
+  ws.onclose = () => { setStatus(false); setTimeout(connect, 3000); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'state') handleState(msg.strategies);
+    if (msg.type === 'trade') { handleTrade(msg); handleSimTrade(msg); }
+    if (msg.type === 'evolution') handleEvolution(msg);
+    if (msg.type === 'market_scan') handleMarketScan(msg);
+    if (msg.type === 'evo_all_progress') handleEvoAllProgress(msg);
+    if (msg.type === 'market_scan')  handleMarketScan(msg);
+    if (msg.type === 'paper_trade') handlePaperTrade(msg);
+    if (msg.type === 'paper_state') handlePaperState(msg);
+  };
+}
+
+function setStatus(on) {
+  const el = document.getElementById('conn-status');
+  el.textContent = on ? '● Connected' : '● Disconnected';
+  el.className = on ? 'connected' : 'disconnected';
+}
+
+// ── State rendering ────────────────────────────────────────────────────────────
+function handleState(list) {
+  list.forEach(s => { strategies[s.id] = s; });
+  renderSidebar();
+  if (activeId && strategies[activeId]) renderChartHeader(strategies[activeId]);
+}
+
+function handleTrade(ev) {
+  appendTradeRow(ev);
+  if (strategies[ev.strategy_id]) {
+    const s = strategies[ev.strategy_id];
+    strategies[ev.strategy_id] = { ...s };
+  }
+  renderSidebar();
+}
+
+function renderSidebar() {
+  const list = document.getElementById('strategy-list');
+  const sorted = Object.values(strategies).sort((a, b) => a.name.localeCompare(b.name));
+  list.innerHTML = sorted.map(s => cardHTML(s)).join('');
+  list.querySelectorAll('.strategy-card').forEach(el => {
+    el.addEventListener('click', () => selectStrategy(el.dataset.id));
+  });
+}
+
+function cardHTML(s) {
+  const price = s.indicators?.price;
+  const priceStr = price ? `$${price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4})}` : '…';
+  const priceColor = s.position ? (s.position.unrealized_pct >= 0 ? 'var(--green)' : 'var(--red)') : 'var(--text)';
+  const signal = s.signal || '—';
+  const indicators = Object.entries(s.indicators || {})
+    .filter(([k]) => k !== 'price')
+    .map(([k, v]) => `<span class="sc-indicator">${k}: ${v}</span>`).join('');
+  const posTag = s.position ? `<span class="pos-badge">IN POSITION</span>` : '';
+  const errTag = s.error ? `<span class="error-pill">⚠ ${s.error}</span>` : '';
+
+  return `<div class="strategy-card${activeId === s.id ? ' active' : ''}" data-id="${s.id}">
+    <div class="sc-header">
+      <span class="sc-name">${s.name}</span>
+      <span class="sc-ticker">${s.ticker}</span>
+    </div>
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span class="sc-price" style="color:${priceColor}">${priceStr}</span>
+      <span class="signal-badge signal-${signal}">${signal}</span>
+      ${posTag}
+    </div>
+    <div class="sc-meta">${s.timeframe} · ${s.trade_count ?? 0} trades${s.win_rate != null ? ` · ${s.win_rate}% WR` : ''} ${errTag}</div>
+    <div class="sc-indicators">${indicators}</div>
+  </div>`;
+}
+
+function selectStrategy(id) {
+  activeId = id;
+  const s = strategies[id];
+  document.getElementById('no-strategy').style.display = 'none';
+  renderChartHeader(s);
+  loadChart(s.ticker);
+  renderSidebar();
+}
+
+function renderChartHeader(s) {
+  document.getElementById('chart-ticker').textContent = s.ticker;
+  const price = s.indicators?.price;
+  const priceEl = document.getElementById('chart-price');
+  priceEl.textContent = price ? `$${price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4})}` : '—';
+  priceEl.style.color = s.position
+    ? (s.position.unrealized_pct >= 0 ? 'var(--green)' : 'var(--red)')
+    : 'var(--text)';
+  document.getElementById('chart-strategy-name').textContent = s.name;
+}
+
+// ── Trade feed ────────────────────────────────────────────────────────────────
+function appendTradeRow(ev) {
+  tradeCount++;
+  document.getElementById('trade-count').textContent = `${tradeCount} trades`;
+  const feed = document.getElementById('feed-rows');
+  const time = new Date(ev.time).toLocaleTimeString();
+  const pnl = ev.pnl_pct != null
+    ? `<span class="${ev.pnl_pct >= 0 ? 'pnl-pos' : 'pnl-neg'}">${ev.pnl_pct >= 0 ? '+' : ''}${ev.pnl_pct}%</span>`
+    : '—';
+  const reason = ev.reason ? `<span class="reason-pill">${ev.reason}</span>` : '';
+  const row = document.createElement('div');
+  row.className = 'trade-row';
+  row.innerHTML = `
+    <span style="color:var(--muted)">${time}</span>
+    <span class="action-${ev.action}">${ev.action}</span>
+    <span>${ev.ticker}</span>
+    <span>${ev.strategy_name}</span>
+    <span>$${ev.price}</span>
+    <span>${pnl} ${reason}</span>
+  `;
+  feed.insertBefore(row, feed.firstChild);
+}
+
+// ── Simulation ────────────────────────────────────────────────────────────────
+let simAccounts = [];
+let simTradeCount = 0;
+let simStartTime = null;
+let simTimerInterval = null;
+
+async function simStart() {
+  const capital  = parseFloat(document.getElementById('sim-capital').value) || 10000;
+  const interval = parseInt(document.getElementById('sim-interval').value) || 60;
+  document.getElementById('sim-status').textContent = '⚡ Starting…';
+  const res = await fetch(`/api/paper/start?capital=${capital}&poll_interval=${interval}`, { method: 'POST' });
+  const data = await res.json();
+  if (data.status === 'started' || data.status === 'already running') {
+    simStartTime = Date.now();
+    document.getElementById('sim-status').textContent = '● Running';
+    document.getElementById('sim-status').style.color = 'var(--green)';
+    clearInterval(simTimerInterval);
+    simTimerInterval = setInterval(() => {
+      if (!simStartTime) return;
+      const s = Math.floor((Date.now() - simStartTime) / 1000);
+      const m = Math.floor(s / 60), sec = s % 60;
+      document.getElementById('sim-timer').textContent = `${m}m ${sec}s running`;
+    }, 1000);
+  }
+}
+
+async function simStop() {
+  await fetch('/api/paper/stop', { method: 'POST' });
+  document.getElementById('sim-status').textContent = '⏹ Stopped';
+  document.getElementById('sim-status').style.color = 'var(--yellow)';
+  clearInterval(simTimerInterval);
+}
+
+async function simReset() {
+  const capital = parseFloat(document.getElementById('sim-capital').value) || 10000;
+  await fetch(`/api/paper/reset?capital=${capital}`, { method: 'POST' });
+  simAccounts = []; simTradeCount = 0; simStartTime = null;
+  clearInterval(simTimerInterval);
+  document.getElementById('sim-status').textContent = 'Reset';
+  document.getElementById('sim-status').style.color = 'var(--muted)';
+  document.getElementById('sim-timer').textContent = '';
+  document.getElementById('sim-cards').innerHTML = '';
+  document.getElementById('sim-summary').innerHTML = '';
+  document.getElementById('sim-trade-log').innerHTML = '';
+  document.getElementById('sim-trade-count').textContent = '0 trades';
+}
+
+function renderSimulation() {
+  if (!simAccounts.length) {
+    fetch('/api/paper/state').then(r => r.json()).then(d => {
+      if (d.accounts?.length) {
+        simAccounts = d.accounts;
+        renderSimCards();
+        renderSimSummary();
+      }
+    });
+  } else {
+    renderSimCards();
+    renderSimSummary();
+  }
+}
+
+function renderSimSummary() {
+  if (!simAccounts.length) return;
+  const totalEquity = simAccounts.reduce((s, a) => s + a.equity, 0);
+  const totalPnl    = simAccounts.reduce((s, a) => s + a.pnl, 0);
+  const startCap    = simAccounts.reduce((s, a) => s + 10000, 0);
+  const totalPct    = ((totalEquity - startCap) / startCap * 100).toFixed(2);
+  const trades      = simAccounts.reduce((s, a) => s + a.trade_count, 0);
+  const wins        = simAccounts.reduce((s, a) => s + (a.win_count || 0), 0);
+  const best        = [...simAccounts].sort((a,b) => b.pnl_pct - a.pnl_pct)[0];
+
+  document.getElementById('sim-summary').innerHTML = `
+    <div class="sim-summary-card">
+      <div class="lbl">Total Equity</div>
+      <div class="val" style="color:${totalPnl >= 0 ? 'var(--green)' : 'var(--red)'}">\$${totalEquity.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+    </div>
+    <div class="sim-summary-card">
+      <div class="lbl">Total P&L</div>
+      <div class="val" style="color:${totalPnl >= 0 ? 'var(--green)' : 'var(--red)'}">${totalPnl >= 0 ? '+' : ''}\$${Math.abs(totalPnl).toFixed(0)} (${totalPct >= 0 ? '+' : ''}${totalPct}%)</div>
+    </div>
+    <div class="sim-summary-card">
+      <div class="lbl">Trades</div>
+      <div class="val">${trades} <span style="font-size:13px;color:var(--green)">${wins}W</span> / <span style="font-size:13px;color:var(--red)">${trades - wins}L</span></div>
+    </div>
+    <div class="sim-summary-card">
+      <div class="lbl">Best Strategy</div>
+      <div class="val" style="font-size:15px;color:var(--green)">${best ? best.name.split('—')[0].trim() : '—'}</div>
+    </div>
+    <div class="sim-summary-card">
+      <div class="lbl">Status</div>
+      <div class="val" style="font-size:15px" id="sim-status-sum">${simAccounts.filter(a => a.position).length} in position</div>
+    </div>`;
+}
+
+function renderSimCards() {
+  const container = document.getElementById('sim-cards');
+  simAccounts.forEach(acc => {
+    let card = document.getElementById(`sim-card-${acc.id}`);
+    if (!card) {
+      card = document.createElement('div');
+      card.id = `sim-card-${acc.id}`;
+      card.className = 'sim-card';
+      container.appendChild(card);
+    }
+    const pnlColor = acc.pnl_pct >= 0 ? 'var(--green)' : 'var(--red)';
+    card.className = `sim-card ${acc.position ? 'in-position' : acc.pnl > 0 ? 'profit' : acc.pnl < 0 ? 'loss' : ''}`;
+    const sig = acc.signal || '—';
+    const pos = acc.position;
+    const indicators = Object.entries(acc.indicators || {})
+      .filter(([k]) => k !== 'price')
+      .map(([k,v]) => `<span class="sim-chip">${k}: ${v}</span>`).join('');
+
+    card.innerHTML = `
+      <div class="sc-top">
+        <div>
+          <div style="font-size:12px;color:var(--muted)">${acc.name}</div>
+          <div style="font-size:13px;font-weight:700;color:var(--blue)">${acc.ticker}</div>
+        </div>
+        <span class="signal-badge signal-${sig}">${sig}</span>
+      </div>
+      <div class="sc-equity" style="color:${pnlColor}">
+        \$${acc.equity.toLocaleString(undefined,{maximumFractionDigits:0})}
+        <span style="font-size:14px">(${acc.pnl_pct >= 0 ? '+' : ''}${acc.pnl_pct}%)</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted)">
+        P&L: <span style="color:${pnlColor};font-weight:600">${acc.pnl >= 0 ? '+' : ''}\$${acc.pnl.toFixed(2)}</span>
+        · ${acc.trade_count} trades${acc.win_rate != null ? ` · ${acc.win_rate}% WR` : ''}
+      </div>
+      ${pos ? `
+      <div style="margin-top:8px;padding:8px;background:rgba(188,140,255,.08);border:1px solid rgba(188,140,255,.2);border-radius:6px;font-size:11px;">
+        <div style="color:var(--purple);font-weight:600;margin-bottom:3px">IN POSITION</div>
+        <div style="color:var(--muted)">Entry: <b>\$${pos.entry_price}</b> · ${pos.shares.toFixed(1)} shares</div>
+        <div style="color:${pos.unrealized_pct >= 0 ? 'var(--green)' : 'var(--red)'}">
+          Unrealized: ${pos.unrealized_pct >= 0 ? '+' : ''}\$${pos.unrealized_pnl.toFixed(2)} (${pos.unrealized_pct >= 0 ? '+' : ''}${pos.unrealized_pct}%)
+        </div>
+      </div>` : ''}
+      <div class="sc-row">${indicators}</div>
+      ${acc.error ? `<div style="font-size:10px;color:var(--red);margin-top:4px">⚠ ${acc.error}</div>` : ''}`;
+  });
+}
+
+function handlePaperTrade(ev) {
+  simTradeCount++;
+  document.getElementById('sim-trade-count').textContent = `${simTradeCount} trades`;
+  const log = document.getElementById('sim-trade-log');
+  const time = new Date(ev.time).toLocaleTimeString();
+  const pnl  = ev.pnl != null
+    ? `<span style="color:${ev.pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${ev.pnl >= 0 ? '+' : ''}\$${ev.pnl.toFixed(2)}</span>`
+    : '—';
+  const reason = ev.reason ? `<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:rgba(255,255,255,.06);color:var(--muted)">${ev.reason}</span>` : '';
+  const row = document.createElement('div');
+  row.className = 'sim-trade-row';
+  row.innerHTML = `
+    <span style="color:var(--muted)">${time}</span>
+    <span class="action-${ev.action}">${ev.action}</span>
+    <span style="color:var(--blue);font-weight:600">${ev.ticker}</span>
+    <span style="color:var(--muted);font-size:11px">${ev.strategy_name?.split('—')[0]?.trim() || ev.strategy_name}</span>
+    <span>\$${ev.price}</span>
+    <span>${pnl}</span>
+    <span>${reason}</span>`;
+  log.insertBefore(row, log.firstChild);
+}
+
+function handlePaperState(msg) {
+  if (msg.accounts) {
+    simAccounts = msg.accounts;
+    renderSimCards();
+    renderSimSummary();
+  }
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.dataset.tab;
+    document.getElementById('tab-live').style.display = tab === 'live' ? 'grid' : 'none';
+    document.getElementById('tab-sim').style.display  = tab === 'simulation' ? 'flex' : 'none';
+    document.getElementById('tab-evo').style.display  = tab === 'evolution' ? 'flex' : 'none';
+    if (tab === 'evolution') { if (!fitnessChart) initFitnessChart(); renderEvoBots(); }
+    if (tab === 'simulation') renderSimulation();
+  });
+});
+
+// ── Evolution ─────────────────────────────────────────────────────────────────
+let evoState = { generation: 0, population: 0, running: false, history: [], bots: [] };
+let fitnessChart = null;
+
+function initFitnessChart() {
+  const ctx = document.getElementById('fitness-chart').getContext('2d');
+  fitnessChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'Best', data: [], borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,.1)', tension: .3, fill: true },
+        { label: 'Avg',  data: [], borderColor: '#58a6ff', backgroundColor: 'transparent', tension: .3 },
+        { label: 'Worst',data: [], borderColor: '#f85149', backgroundColor: 'transparent', tension: .3, borderDash: [4,3] },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#8b949e', font: { size: 11 } } } },
+      scales: {
+        x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+        y: { ticks: { color: '#8b949e', callback: v => v + '%' }, grid: { color: '#21262d' } }
+      }
+    }
+  });
+}
+
+function updateFitnessChart(history) {
+  if (!fitnessChart) return;
+  fitnessChart.data.labels = history.map(h => `Gen ${h.generation}`);
+  fitnessChart.data.datasets[0].data = history.map(h => h.best);
+  fitnessChart.data.datasets[1].data = history.map(h => h.avg);
+  fitnessChart.data.datasets[2].data = history.map(h => h.worst);
+  fitnessChart.update();
+}
+
+function renderEvoBots() {
+  const { generation, running, history, bots } = evoState;
+  document.getElementById('evo-gen').textContent = `Generation ${generation}`;
+  document.getElementById('evo-status').textContent = running ? '⚡ Evolving…' : (generation > 0 ? `Generation ${generation} complete` : 'Ready — seed a population to begin');
+
+  // History table
+  const histEl = document.getElementById('evo-history');
+  histEl.innerHTML = history.slice(-8).reverse().map(h => `
+    <div class="gen-stat">
+      <span style="color:var(--muted)">Gen ${h.generation}</span>
+      <span style="color:var(--green)">Best: ${h.best > 0 ? '+' : ''}${h.best}%</span>
+      <span style="color:var(--blue)">Avg: ${h.avg > 0 ? '+' : ''}${h.avg}%</span>
+      <span style="color:var(--red)">Worst: ${h.worst > 0 ? '+' : ''}${h.worst}%</span>
+    </div>`).join('');
+
+  updateFitnessChart(history);
+
+  // Bot cards
+  const botsEl = document.getElementById('evo-bots');
+  if (!bots.length) { botsEl.innerHTML = '<div style="color:var(--muted);font-size:13px">No bots yet — seed a population first.</div>'; return; }
+  const best = bots[0]?.fitness;
+  botsEl.innerHTML = bots.map(b => {
+    const isBest = b.fitness === best && best !== undefined;
+    const cls = !b.alive ? 'dead' : isBest ? 'best' : '';
+    const fitCls = b.fitness >= 0 ? 'pos' : 'neg';
+    const g = b.genome;
+    return `<div class="bot-card ${cls}">
+      <div class="bot-id">Bot #${b.id} · Gen ${b.generation} ${isBest ? '👑' : ''}</div>
+      <div class="bot-fitness ${fitCls}">${b.fitness >= 0 ? '+' : ''}${b.fitness}%</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${b.trades} trades · ${b.win_rate}% WR</div>
+      <div class="bot-genome">
+        <span class="gene">RSI ${g.rsi_buy}→${g.rsi_sell}</span>
+        <span class="gene">RSI(${g.rsi_period})</span>
+        <span class="gene">EMA(${g.ema_period})</span>
+        ${g.use_vwap ? '<span class="gene">VWAP</span>' : ''}
+        <span class="gene">SL ${g.stop_loss_pct}%</span>
+        <span class="gene">TP ${g.take_profit_pct}%</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function evoAction(endpoint, params = {}) {
+  const url = new URL('/api/evolution/' + endpoint, location.origin);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  const res = await fetch(url, { method: 'POST' });
+  const data = await res.json();
+  if (data.generation !== undefined || data.bots !== undefined) {
+    evoState = { ...evoState, ...data };
+    renderEvoBots();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+document.getElementById('evo-seed-btn').addEventListener('click', () => {
+  const ticker = document.getElementById('evo-ticker').value.trim().toUpperCase() || 'SOUN';
+  const pop = document.getElementById('evo-pop').value;
+  evoAction('seed', { ticker, population: pop });
+});
+document.getElementById('evo-run-btn').addEventListener('click', () => evoAction('run'));
+document.getElementById('evo-auto-btn').addEventListener('click', () => {
+  const gens = document.getElementById('evo-gens').value;
+  evoAction('auto', { generations: gens });
+});
+document.getElementById('evo-stop-btn').addEventListener('click', () => evoAction('stop'));
+document.getElementById('evo-reset-btn').addEventListener('click', () => evoAction('reset'));
+document.getElementById('evo-scan-btn').addEventListener('click', async () => {
+  const gens = document.getElementById('evo-gens').value;
+  const pop  = document.getElementById('evo-pop').value;
+  document.getElementById('market-scan-panel').style.display = 'block';
+  document.getElementById('scan-results').innerHTML = '';
+  document.getElementById('scan-status').textContent = '⚡ Scanning markets…';
+  await fetch(`/api/evolution/run-market-scan?generations=${gens}&population=${pop}`, { method: 'POST' });
+});
+
+document.getElementById('evo-all-btn').addEventListener('click', async () => {
+  const gens = document.getElementById('evo-gens').value;
+  const pop  = document.getElementById('evo-pop').value;
+  document.getElementById('evo-all-progress').style.display = 'block';
+  document.getElementById('evo-all-rows').innerHTML = '';
+  document.getElementById('evo-status').textContent = '🚀 Evolving all strategies…';
+  await fetch(`/api/evolution/run-all-strategies?generations=${gens}&population=${pop}`, { method: 'POST' });
+});
+}); // end DOMContentLoaded
+
+function handleMarketScan(msg) {
+  const panel = document.getElementById('market-scan-panel');
+  const status = document.getElementById('scan-status');
+  const results = document.getElementById('scan-results');
+  panel.style.display = 'block';
+
+  if (msg.status === 'scanning') {
+    status.textContent = '⚡ ' + msg.message;
+    return;
+  }
+  if (msg.status === 'ready') {
+    status.textContent = `📊 ${msg.stocks.length} stocks found — evolving…`;
+    return;
+  }
+  if (msg.status === 'evolving') {
+    status.textContent = `🧬 ${msg.current}/${msg.total} — ${msg.ticker} (vol ×${msg.volume_factor} · sentiment ${msg.sentiment_score >= 0 ? '+' : ''}${(msg.sentiment_score * 100).toFixed(0)}%)`;
+    return;
+  }
+  if (msg.status === 'ticker_done') {
+    const fit = msg.best_fitness;
+    const fitColor = fit >= 10 ? 'var(--green)' : fit >= 0 ? '#8b949e' : 'var(--red)';
+    const sent = msg.sentiment || {};
+    const bull = sent.bullish_pct || 50;
+    const sentColor = bull >= 60 ? 'var(--green)' : bull <= 40 ? 'var(--red)' : 'var(--muted)';
+    const g = msg.winning_genome || {};
+    const card = document.createElement('div');
+    card.style.cssText = `background:var(--bg);border:1px solid ${fit >= 10 ? 'var(--green)' : 'var(--border)'};border-radius:8px;padding:10px;font-size:11px;`;
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-weight:700;font-size:14px;color:var(--blue)">${msg.ticker}</span>
+        <span style="font-weight:700;font-size:16px;color:${fitColor}">${fit >= 0 ? '+' : ''}${fit}%</span>
+      </div>
+      <div style="color:var(--muted);margin-bottom:6px">${msg.name}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        <span style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,.06);color:var(--muted)">Vol ×${msg.volume_factor}</span>
+        <span style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,.06);color:${sentColor}">🐦 ${bull}% bull</span>
+        <span style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,.06);color:var(--muted)">$${msg.price}</span>
+        <span style="padding:2px 6px;border-radius:4px;background:rgba(255,255,255,.06);color:${msg.change_pct >= 0 ? 'var(--green)' : 'var(--red)'}">${msg.change_pct >= 0 ? '+' : ''}${msg.change_pct}%</span>
+      </div>
+      <div style="color:var(--muted);font-size:10px">RSI ${g.rsi_buy}→${g.rsi_sell} · EMA(${g.ema_period}) · SL ${g.stop_loss_pct}% · TP ${g.take_profit_pct}%</div>`;
+    // Insert sorted by fitness
+    const cards = [...results.children];
+    const insertBefore = cards.find(c => {
+      const val = parseFloat(c.querySelector('[style*="font-size:16px"]')?.textContent || '-999');
+      return val < fit;
+    });
+    insertBefore ? results.insertBefore(card, insertBefore) : results.appendChild(card);
+    return;
+  }
+  if (msg.status === 'complete') {
+    status.textContent = `✅ ${msg.message}`;
+    document.getElementById('evo-status').textContent = `✅ Market scan complete — ${msg.results?.length || 0} stocks evolved`;
+  }
+}
+
+function handleEvoAllProgress(msg) {
+  const rows = document.getElementById('evo-all-rows');
+  const panel = document.getElementById('evo-all-progress');
+  panel.style.display = 'block';
+
+  if (msg.status === 'start') {
+    rows.innerHTML = '';
+    document.getElementById('evo-status').textContent = `🧬 ${msg.message}`;
+    return;
+  }
+
+  if (msg.status === 'seeded') {
+    const row = document.createElement('div');
+    row.id = `evo-row-${msg.ticker}-${msg.name?.replace(/\s/g,'_')}`;
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:12px;';
+    row.innerHTML = `<span style="color:var(--blue);font-weight:700;width:60px">${msg.ticker}</span><span style="color:var(--text);flex:1">${msg.name}</span><span style="color:var(--muted)">Seeded ✓</span>`;
+    rows.appendChild(row);
+    return;
+  }
+
+  if (msg.status === 'generation') {
+    document.getElementById('evo-status').textContent = `🧬 Generation ${msg.generation}/${msg.total_generations} — competing…`;
+    msg.results?.forEach(r => {
+      const id = `evo-row-${r.ticker}-${r.name?.replace(/\s/g,'_')}`;
+      const row = document.getElementById(id);
+      if (!row) return;
+      const survived = r.survived;
+      const fitColor = r.best >= 10 ? 'var(--green)' : r.best >= 0 ? 'var(--muted)' : 'var(--red)';
+      row.style.borderColor = survived ? 'var(--green)' : 'var(--red)';
+      row.innerHTML = `
+        <span style="color:var(--blue);font-weight:700;width:60px">${r.ticker}</span>
+        <span style="color:var(--text);flex:1">${r.name}</span>
+        <span style="font-weight:700;color:${fitColor}">${r.best >= 0 ? '+' : ''}${r.best}%</span>
+        <span style="font-size:11px;padding:2px 8px;border-radius:4px;background:${survived ? 'rgba(63,185,80,.15)' : 'rgba(248,81,73,.15)'};color:${survived ? 'var(--green)' : 'var(--red)'}">
+          ${survived ? '✓ Breeding' : '💀 Receiving bred genes'}
+        </span>
+        <span style="color:var(--muted);font-size:11px">#${r.rank}</span>`;
+    });
+    return;
+  }
+
+  if (msg.status === 'complete') {
+    document.getElementById('evo-status').textContent = `✅ ${msg.message}`;
+    msg.results?.forEach(r => {
+      const id = `evo-row-${r.ticker}-${r.name?.replace(/\s/g,'_')}`;
+      const row = document.getElementById(id);
+      if (!row) return;
+      const g = r.winning_genome || {};
+      row.style.borderColor = r === msg.results[0] ? 'gold' : 'var(--border)';
+      row.innerHTML = `
+        <span style="color:var(--blue);font-weight:700;width:60px">${r.ticker}</span>
+        <span style="color:var(--text);flex:1">${r.name} ${r === msg.results[0] ? '👑' : ''}</span>
+        <span style="font-weight:700;color:${r.best_fitness >= 0 ? 'var(--green)' : 'var(--red)'}">${r.best_fitness >= 0 ? '+' : ''}${r.best_fitness}%</span>
+        <span style="font-size:10px;color:var(--muted)">RSI ${g.rsi_buy}→${g.rsi_sell} · EMA(${g.ema_period}) · SL ${g.stop_loss_pct}% · TP ${g.take_profit_pct}%</span>`;
+    });
+  }
+}
+
+function handleEvoAllProgressOLD(msg) {
+  const rows = document.getElementById('evo-all-rows');
+  const status = document.getElementById('evo-status');
+
+  if (msg.status === 'complete') {
+    status.textContent = `✅ ${msg.message}`;
+    return;
+  }
+
+  const rowId = `evo-row-${msg.ticker}`;
+  let row = document.getElementById(rowId);
+  if (!row) {
+    row = document.createElement('div');
+    row.id = rowId;
+    row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 12px;background:var(--bg);border-radius:6px;font-size:12px;';
+    rows.appendChild(row);
+  }
+
+  if (msg.status === 'running') {
+    row.innerHTML = `
+      <span style="color:var(--blue);font-weight:700">${msg.ticker}</span>
+      <span style="color:var(--muted)">${msg.name}</span>
+      <span style="color:var(--yellow);margin-left:auto">⚡ Evolving…</span>`;
+    status.textContent = `${msg.current}/${msg.total} — ${msg.name}`;
+  } else if (msg.status === 'done') {
+    const fit = msg.best_fitness;
+    const fitColor = fit >= 0 ? 'var(--green)' : 'var(--red)';
+    const g = msg.winning_genome || {};
+    row.innerHTML = `
+      <span style="color:var(--blue);font-weight:700">${msg.ticker}</span>
+      <span style="color:var(--muted)">${msg.name}</span>
+      <span style="color:${fitColor};font-weight:700;margin-left:auto">${fit >= 0 ? '+' : ''}${fit}%</span>
+      <span style="color:var(--muted)">RSI ${g.rsi_buy}→${g.rsi_sell} · EMA(${g.ema_period}) · SL ${g.stop_loss_pct}% · TP ${g.take_profit_pct}%</span>
+      <span style="color:var(--green)">${msg.updated_params ? '✓ params updated' : ''}</span>`;
+  }
+}
+
+// Handle evolution updates from WebSocket
+function handleEvolution(msg) {
+  if (msg.type === 'evolution_lessons') {
+    document.getElementById('evo-status').textContent = `✅ Lessons saved → ${msg.message.replace('Lessons saved to ', '')}`;
+    return;
+  }
+  evoState = { ...evoState, ...msg, running: msg.running ?? true };
+  if (document.getElementById('tab-evo').style.display !== 'none') renderEvoBots();
+}
+
+// ── Simulation ────────────────────────────────────────────────────────────────
+let simPollTimer = null;
+
+function renderSimulation() { fetchAndRenderSim(); }
+
+async function fetchAndRenderSim() {
+  try {
+    const res = await fetch('/api/sim/strategies');
+    if (!res.ok) return;
+    const data = await res.json();
+    const strategies = data?.strategies;
+    if (!strategies?.length) return;
+    renderSimSummary(strategies);
+    renderSimCards(strategies);
+  } catch(e) {}
+}
+
+function renderSimSummary(strategies) {
+  const el = document.getElementById('sim-summary');
+  const totalPnl = strategies.reduce((s, x) => s + (x.sim_pnl || 0), 0);
+  const best = strategies.reduce((b, x) => x.sim_pnl_pct > b ? x.sim_pnl_pct : b, -Infinity);
+  const worst = strategies.reduce((w, x) => x.sim_pnl_pct < w ? x.sim_pnl_pct : w, Infinity);
+  const totalTrades = strategies.reduce((s, x) => s + (x.trade_count || 0), 0);
+  const pnlColor = totalPnl >= 0 ? 'var(--green)' : 'var(--red)';
+  el.innerHTML = `
+    ${stat('TOTAL P&L', `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`, pnlColor)}
+    ${stat('BEST', `${best >= 0 ? '+' : ''}${best.toFixed(1)}%`, 'var(--green)')}
+    ${stat('WORST', `${worst >= 0 ? '+' : ''}${worst.toFixed(1)}%`, 'var(--red)')}
+    ${stat('TRADES', totalTrades, 'var(--text)')}
+    ${stat('DATA', '5-min live', 'var(--blue)')}`;
+}
+
+function stat(label, value, color) {
+  return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 14px;text-align:center">
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">${label}</div>
+    <div style="font-size:16px;font-weight:700;color:${color}">${value}</div>
+  </div>`;
+}
+
+function renderSimCards(strategies) {
+  const cards = document.getElementById('sim-cards');
+  cards.innerHTML = strategies.map(s => {
+    const pnl = s.sim_pnl || 0;
+    const pnlPct = s.sim_pnl_pct || 0;
+    const pnlColor = pnl > 0 ? 'var(--green)' : pnl < 0 ? 'var(--red)' : 'var(--muted)';
+    const signal = s.signal || '—';
+    const sigColor = signal === 'BUY' ? 'var(--green)' : signal === 'SELL' ? 'var(--red)' : 'var(--muted)';
+    const pos = s.position;
+    const indicators = Object.entries(s.indicators || {})
+      .filter(([k]) => k !== 'price')
+      .map(([k,v]) => `<span style="font-size:10px;padding:2px 5px;border-radius:3px;background:rgba(255,255,255,.06);color:var(--muted)">${k}: ${v}</span>`).join('');
+    return `<div style="background:var(--surface);border:2px solid ${pnl > 50 ? 'var(--green)' : pnl < -50 ? 'var(--red)' : 'var(--border)'};border-radius:8px;padding:14px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+        <span style="font-weight:700">${s.name}</span>
+        <span style="color:var(--blue);font-weight:700">${s.ticker}</span>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px">
+        <span style="font-size:22px;font-weight:700">$${s.indicators?.price?.toFixed(2) || '—'}</span>
+        <span style="padding:2px 8px;border-radius:4px;background:${signal==='BUY'?'rgba(63,185,80,.2)':signal==='SELL'?'rgba(248,81,73,.2)':'rgba(139,148,158,.1)'};color:${sigColor};font-weight:700;font-size:12px">${signal}</span>
+        ${pos ? `<span style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(188,140,255,.15);color:var(--purple)">IN POSITION ${pos.unrealized_pct >= 0 ? '+' : ''}${(pos.unrealized_pct||0).toFixed(1)}%</span>` : ''}
+      </div>
+      <div style="display:flex;gap:14px;margin-bottom:8px">
+        <div><div style="font-size:10px;color:var(--muted)">P&L</div><div style="font-size:18px;font-weight:700;color:${pnlColor}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</div></div>
+        <div><div style="font-size:10px;color:var(--muted)">RETURN</div><div style="font-size:18px;font-weight:700;color:${pnlColor}">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</div></div>
+        <div><div style="font-size:10px;color:var(--muted)">CAPITAL</div><div style="font-size:15px;font-weight:600">$${(s.sim_capital||10000).toFixed(0)}</div></div>
+        <div><div style="font-size:10px;color:var(--muted)">TRADES</div><div style="font-size:15px;font-weight:600">${s.trade_count||0}${s.win_rate!=null ? ` · ${s.win_rate}%WR` : ''}</div></div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px">${indicators}</div>
+      ${s.error ? `<div style="font-size:10px;color:var(--red);margin-top:4px">⚠ ${s.error}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function simStart() {
+  simRunning = true;
+  simStartTime = Date.now();
+  document.getElementById('sim-status').textContent = '⚡ Running — 5m intraday data';
+  document.getElementById('sim-status').style.color = 'var(--green)';
+  fetchAndRenderSim();
+  const interval = parseInt(document.getElementById('sim-interval').value) * 1000;
+  simPollTimer = setInterval(fetchAndRenderSim, interval);
+}
+
+function simStop() {
+  simRunning = false;
+  clearInterval(simPollTimer);
+  document.getElementById('sim-status').textContent = 'Stopped';
+  document.getElementById('sim-status').style.color = 'var(--muted)';
+}
+
+function simReset() {
+  simStop();
+  simTradeCount = 0;
+  document.getElementById('sim-trade-count').textContent = '0 trades';
+  document.getElementById('sim-trade-log').innerHTML = '';
+  document.getElementById('sim-summary').innerHTML = '';
+  document.getElementById('sim-cards').innerHTML = '';
+  document.getElementById('sim-status').textContent = 'Not running';
+  fetch('/api/sim/reset', { method: 'POST' }).catch(() => {});
+}
+
+// Handle sim trade events from WebSocket
+function handleSimTrade(ev) {
+  simTradeCount++;
+  document.getElementById('sim-trade-count').textContent = `${simTradeCount} trades`;
+  const log = document.getElementById('sim-trade-log');
+  const time = new Date(ev.time).toLocaleTimeString();
+  const pnlHtml = ev.pnl_pct != null
+    ? `<span style="color:${ev.pnl_pct >= 0 ? 'var(--green)' : 'var(--red)'}">${ev.pnl_pct >= 0 ? '+' : ''}${ev.pnl_pct}% ($${ev.pnl_dollar >= 0 ? '+' : ''}${(ev.pnl_dollar||0).toFixed(2)})</span>` : '';
+  const row = document.createElement('div');
+  row.style.cssText = 'display:grid;grid-template-columns:65px 50px 70px 1fr auto;gap:8px;padding:8px 16px;border-bottom:1px solid var(--border);font-size:12px;align-items:center;animation:fadeIn .3s ease';
+  row.innerHTML = `<span style="color:var(--muted)">${time}</span><span style="font-weight:700;color:${ev.action==='BUY'?'var(--green)':'var(--red)'}">${ev.action}</span><span style="color:var(--blue)">${ev.ticker}</span><span style="color:var(--muted)">${ev.strategy_name}</span><span>$${ev.price} ${pnlHtml}</span>`;
+  log.insertBefore(row, log.firstChild);
+  // Auto-refresh cards
+  if (simRunning) fetchAndRenderSim();
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+initChart();
+connect();
+</script>
+
+<!-- Simulation tab -->
+<div id="tab-sim" style="display:none;flex-direction:column;height:calc(100vh - 93px);overflow-y:auto;padding:20px 24px;gap:16px;">
+
+  <!-- Controls -->
+  <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:8px;flex-wrap:wrap;">
+    <div style="display:flex;flex-direction:column;gap:3px">
+      <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Starting Capital</span>
+      <input id="sim-capital" type="number" value="10000" style="width:120px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:14px;font-weight:600;" />
+    </div>
+    <div style="display:flex;flex-direction:column;gap:3px">
+      <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Update Every</span>
+      <select id="sim-interval" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;">
+        <option value="30">30 sec</option>
+        <option value="60" selected>1 min</option>
+        <option value="300">5 min</option>
+      </select>
+    </div>
+    <div style="display:flex;align-items:flex-end;gap:8px;margin-top:auto">
+      <button id="sim-start-btn" onclick="simStart()" style="padding:8px 20px;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:700;background:var(--green);color:#000;">▶ Start Simulation</button>
+      <button id="sim-stop-btn" onclick="simStop()" style="padding:8px 20px;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:700;background:var(--yellow);color:#000;">⏹ Stop</button>
+      <button onclick="simReset()" style="padding:8px 16px;border-radius:6px;border:1px solid var(--red);cursor:pointer;font-size:13px;font-weight:600;background:transparent;color:var(--red);">Reset</button>
+    </div>
+    <div style="margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+      <span id="sim-status" style="font-size:12px;color:var(--muted)">Not running</span>
+      <span id="sim-timer" style="font-size:11px;color:var(--muted)"></span>
+    </div>
+  </div>
+
+  <!-- Portfolio summary bar -->
+  <div id="sim-summary" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;"></div>
+
+  <!-- Strategy cards -->
+  <div id="sim-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;"></div>
+
+  <!-- Trade log -->
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+    <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">Today's Paper Trades</span>
+      <span id="sim-trade-count" style="font-size:12px;color:var(--text)">0 trades</span>
+    </div>
+    <div id="sim-trade-log" style="max-height:200px;overflow-y:auto;"></div>
+  </div>
+</div>
+
+<!-- Evolution tab -->
+<div id="tab-evo" style="display:none; flex-direction:column; height:calc(100vh - 93px); overflow-y:auto; padding:20px 24px; gap:16px;">
+
+  <div class="evo-controls">
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <label style="font-size:11px;color:var(--muted)">TICKER</label>
+      <input id="evo-ticker" type="text" value="SOUN" style="width:90px;font-size:16px;font-weight:700;text-transform:uppercase;letter-spacing:.05em" />
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <label style="font-size:11px;color:var(--muted)">POPULATION</label>
+      <select id="evo-pop">
+        <option value="8">8 bots</option>
+        <option value="10" selected>10 bots</option>
+        <option value="15">15 bots</option>
+        <option value="20">20 bots</option>
+      </select>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <label style="font-size:11px;color:var(--muted)">GENERATIONS</label>
+      <select id="evo-gens">
+        <option value="5">5</option>
+        <option value="10" selected>10</option>
+        <option value="20">20</option>
+        <option value="50">50</option>
+      </select>
+    </div>
+    <div style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap">
+      <button class="evo-btn seed" id="evo-seed-btn">🌱 Seed</button>
+      <button class="evo-btn run"  id="evo-run-btn">▶ Run Gen</button>
+      <button class="evo-btn auto" id="evo-auto-btn">⏩ Auto-Evolve</button>
+      <button class="evo-btn stop" id="evo-stop-btn">⏹ Stop</button>
+      <button class="evo-btn reset" id="evo-reset-btn">🗑 Reset</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px;margin-left:auto">
+      <label style="font-size:11px;color:var(--muted)">ALL STRATEGIES</label>
+      <button class="evo-btn" id="evo-all-btn" style="background:var(--blue);color:#000">🚀 Evolve All</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <label style="font-size:11px;color:var(--muted)">TOP 50 THIS WEEK</label>
+      <button class="evo-btn" id="evo-scan-btn" style="background:linear-gradient(135deg,#f85149,#bc8cff);color:#fff">📡 Market Scan</button>
+    </div>
+  </div>
+
+  <!-- Market scan panel -->
+  <div id="market-scan-panel" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <span style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">📡 Market Scan — Top 50 This Week</span>
+      <span id="scan-status" style="font-size:12px;color:var(--yellow)"></span>
+    </div>
+    <div id="scan-results" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;max-height:400px;overflow-y:auto;"></div>
+  </div>
+
+  <!-- All-strategies progress -->
+  <div id="evo-all-progress" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;">
+    <div style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:10px">Evolving All Strategies</div>
+    <div id="evo-all-rows" style="display:flex;flex-direction:column;gap:8px;"></div>
+  </div>
+  <span id="evo-status" style="font-size:12px;color:var(--muted)"></span>
+
+  <div class="evo-grid">
+    <div class="evo-card">
+      <h3>Population Fitness <span id="evo-gen" style="color:var(--blue);font-weight:700"></span></h3>
+      <div id="fitness-chart-wrap"><canvas id="fitness-chart"></canvas></div>
+    </div>
+    <div class="evo-card">
+      <h3>Generation History</h3>
+      <div id="evo-history"><div style="color:var(--muted);font-size:12px">No generations yet.</div></div>
+    </div>
+  </div>
+
+  <div class="evo-card">
+    <h3>Bots — Current Population</h3>
+    <div class="bot-grid" id="evo-bots">
+      <div style="color:var(--muted);font-size:13px">No bots yet — seed a population first.</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

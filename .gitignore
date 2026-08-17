@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+_to_delete/
+push_setup*.bat
+push_log*.txt
