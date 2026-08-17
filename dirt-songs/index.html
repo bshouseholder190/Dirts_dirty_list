@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>For Dirt — Song List</title>
+<style>
+  :root {
+    --bg: #f7f5f2;
+    --panel: #ffffff;
+    --ink: #232019;
+    --ink-soft: #6b6459;
+    --line: #e6e1d8;
+    --accent: #8a6d3b;
+    --accent-soft: #f1e9db;
+    --radius: 10px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+
+  header {
+    padding: 48px 24px 24px;
+    text-align: center;
+  }
+
+  header h1 {
+    margin: 0 0 6px;
+    font-size: 2rem;
+    letter-spacing: 0.02em;
+  }
+
+  header p {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 0.95rem;
+  }
+
+  main {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 0 20px 64px;
+  }
+
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  #search {
+    flex: 1;
+    min-width: 220px;
+    padding: 10px 14px;
+    font-size: 0.95rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--ink);
+  }
+
+  #search:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .count {
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+
+  .table-wrap {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  thead th {
+    text-align: left;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-soft);
+    background: var(--accent-soft);
+    padding: 12px 14px;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+  }
+
+  thead th:hover { color: var(--ink); }
+
+  thead th .arrow {
+    display: inline-block;
+    width: 0.8em;
+    opacity: 0.5;
+  }
+
+  thead th.sorted .arrow { opacity: 1; }
+
+  tbody td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.95rem;
+    vertical-align: middle;
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+
+  tbody tr:hover { background: #fbfaf7; }
+
+  td.title { font-weight: 600; }
+
+  td.key {
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-soft);
+  }
+
+  .links {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    font-size: 0.82rem;
+    border-radius: 999px;
+    text-decoration: none;
+    border: 1px solid var(--line);
+    color: var(--accent);
+    background: var(--accent-soft);
+    white-space: nowrap;
+  }
+
+  .links a:hover {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  .links span.none {
+    font-size: 0.82rem;
+    color: #b8b1a4;
+    padding: 5px 0;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--ink-soft);
+    display: none;
+  }
+
+  footer {
+    text-align: center;
+    padding: 24px;
+    color: var(--ink-soft);
+    font-size: 0.8rem;
+  }
+
+  @media (max-width: 640px) {
+    thead { display: none; }
+    table, tbody, tr, td { display: block; width: 100%; }
+    tbody tr {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    tbody td {
+      border: none;
+      padding: 3px 0;
+    }
+    td.title { font-size: 1.05rem; }
+    td.artist::before { content: ""; }
+    td.key::before { content: "Key: "; }
+    .links { margin-top: 6px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>For Dirt</h1>
+  <p>Song list — artist, title, key, audio, and charts</p>
+</header>
+
+<main>
+  <div class="toolbar">
+    <input type="text" id="search" placeholder="Search by title, artist, or key…">
+    <div class="count" id="count"></div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th data-key="title">Title <span class="arrow"></span></th>
+          <th data-key="artist">Artist <span class="arrow"></span></th>
+          <th data-key="key">Key <span class="arrow"></span></th>
+          <th>Audio</th>
+          <th>Chart</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p class="empty-state" id="emptyState">No songs match your search.</p>
+  </div>
+</main>
+
+<footer>
+  For Dirt · updated <span id="updated"></span>
+</footer>
+
+<script>
+  /* ================================================================
+     SONG DATA
+     ----------------------------------------------------------------
+     Add one entry per song. Every field is a plain string.
+     - audio / chart: paste a full link (YouTube, Spotify, MP3, PDF,
+       Google Drive, Dropbox, whatever). Leave "" (empty quotes) if
+       you don't have one yet — the site will just skip that button.
+     - key: use whatever notation you use, e.g. "G", "D/A", "Capo 2 (D)".
+
+     The three rows below are examples only — replace them with your
+     real songs, then add as many more { ... } rows as you need.
+     Don't forget the comma between rows (but not after the last one).
+     ================================================================ */
+  const SONGS = [
+    {
+      title: "Come Thou Fount",
+      artist: "Traditional",
+      key: "G",
+      audio: "https://www.youtube.com/results?search_query=come+thou+fount",
+      chart: ""
+    },
+    {
+      title: "Example Song Two",
+      artist: "Example Artist",
+      key: "D",
+      audio: "",
+      chart: ""
+    },
+    {
+      title: "Example Song Three",
+      artist: "Example Artist",
+      key: "A/C#m",
+      audio: "",
+      chart: ""
+    }
+  ];
+  /* ================================================================ */
+
+  const rowsEl = document.getElementById('rows');
+  const searchEl = document.getElementById('search');
+  const countEl = document.getElementById('count');
+  const emptyState = document.getElementById('emptyState');
+  const headers = document.querySelectorAll('thead th[data-key]');
+
+  let sortKey = 'title';
+  let sortAsc = true;
+
+  function linkButton(url, label) {
+    if (!url) return '';
+    return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener">${label} ↗</a>`;
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, s => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[s]));
+  }
+  function escapeAttr(str) { return escapeHtml(str); }
+
+  function render() {
+    const query = searchEl.value.trim().toLowerCase();
+
+    let filtered = SONGS.filter(s =>
+      !query ||
+      s.title.toLowerCase().includes(query) ||
+      s.artist.toLowerCase().includes(query) ||
+      s.key.toLowerCase().includes(query)
+    );
+
+    filtered.sort((a, b) => {
+      const va = (a[sortKey] || '').toLowerCase();
+      const vb = (b[sortKey] || '').toLowerCase();
+      if (va < vb) return sortAsc ? -1 : 1;
+      if (va > vb) return sortAsc ? 1 : -1;
+      return 0;
+    });
+
+    rowsEl.innerHTML = filtered.map(s => {
+      const audioBtn = linkButton(s.audio, 'Audio');
+      const chartBtn = linkButton(s.chart, 'Chart');
+      const links = (audioBtn + chartBtn) || '<span class="none">—</span>';
+      return `<tr>
+        <td class="title">${escapeHtml(s.title)}</td>
+        <td class="artist">${escapeHtml(s.artist)}</td>
+        <td class="key">${escapeHtml(s.key)}</td>
+        <td class="links">${audioBtn || '<span class="none">—</span>'}</td>
+        <td class="links">${chartBtn || '<span class="none">—</span>'}</td>
+      </tr>`;
+    }).join('');
+
+    countEl.textContent = `${filtered.length} song${filtered.length === 1 ? '' : 's'}`;
+    emptyState.style.display = filtered.length ? 'none' : 'block';
+
+    headers.forEach(h => {
+      h.classList.toggle('sorted', h.dataset.key === sortKey);
+      const arrow = h.querySelector('.arrow');
+      arrow.textContent = h.dataset.key === sortKey ? (sortAsc ? '▲' : '▼') : '';
+    });
+  }
+
+  headers.forEach(h => {
+    h.addEventListener('click', () => {
+      const key = h.dataset.key;
+      if (sortKey === key) {
+        sortAsc = !sortAsc;
+      } else {
+        sortKey = key;
+        sortAsc = true;
+      }
+      render();
+    });
+  });
+
+  searchEl.addEventListener('input', render);
+
+  document.getElementById('updated').textContent = new Date().toLocaleDateString('en-US', {
+    year: 'numeric', month: 'long', day: 'numeric'
+  });
+
+  render();
+</script>
+
+</body>
+</html>
