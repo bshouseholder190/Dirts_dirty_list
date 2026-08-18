@@ -180,6 +180,105 @@
     font-size: 0.8rem;
   }
 
+  button.add-btn {
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button.add-btn:hover { opacity: 0.9; }
+
+  .row-actions {
+    display: flex;
+    gap: 6px;
+  }
+  .row-actions button {
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--ink-soft);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .row-actions button:hover { background: var(--accent-soft); color: var(--ink); }
+  .row-actions button.danger:hover { background: #f4dede; color: #a33; border-color: #e0b8b8; }
+
+  .modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(35, 32, 25, 0.4);
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 10;
+  }
+  .modal-backdrop.open { display: flex; }
+
+  .modal {
+    background: var(--panel);
+    border-radius: var(--radius);
+    padding: 24px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+  }
+  .modal h2 { margin: 0 0 16px; font-size: 1.15rem; }
+  .modal label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+    margin: 12px 0 4px;
+  }
+  .modal input {
+    width: 100%;
+    padding: 9px 12px;
+    font-size: 0.95rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--ink);
+  }
+  .modal input:focus { outline: none; border-color: var(--accent); }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .modal-actions button {
+    padding: 9px 16px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--ink);
+  }
+  .modal-actions button.primary {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: #fff;
+  }
+  .modal-error {
+    color: #a33;
+    font-size: 0.82rem;
+    margin-top: 10px;
+    display: none;
+  }
+  .loading-state, .error-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--ink-soft);
+  }
+  .error-state { color: #a33; display: none; }
+
   @media (max-width: 640px) {
     thead { display: none; }
     table, tbody, tr, td { display: block; width: 100%; }
@@ -195,6 +294,7 @@
     td.artist::before { content: ""; }
     td.key::before { content: "Key: "; }
     .links { margin-top: 6px; }
+    .row-actions { margin-top: 6px; }
   }
 </style>
 </head>
@@ -209,9 +309,13 @@
   <div class="toolbar">
     <input type="text" id="search" placeholder="Search by title, artist, or key…">
     <div class="count" id="count"></div>
+    <button class="add-btn" id="addBtn">+ Add Song</button>
   </div>
 
-  <div class="table-wrap">
+  <p class="loading-state" id="loadingState">Loading songs…</p>
+  <p class="error-state" id="errorState">Couldn't load songs. Refresh to try again.</p>
+
+  <div class="table-wrap" id="tableWrap" style="display:none;">
     <table>
       <thead>
         <tr>
@@ -220,6 +324,7 @@
           <th data-key="key">Key <span class="arrow"></span></th>
           <th>Audio</th>
           <th>Chart</th>
+          <th></th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>
@@ -232,50 +337,56 @@
   For Dirt · updated <span id="updated"></span>
 </footer>
 
-<script>
-  /* ================================================================
-     SONG DATA
-     ----------------------------------------------------------------
-     Add one entry per song. Every field is a plain string.
-     - audio / chart: paste a full link (YouTube, Spotify, MP3, PDF,
-       Google Drive, Dropbox, whatever). Leave "" (empty quotes) if
-       you don't have one yet — the site will just skip that button.
-     - key: use whatever notation you use, e.g. "G", "D/A", "Capo 2 (D)".
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <h2 id="modalTitle">Add Song</h2>
+    <label for="fTitle">Title</label>
+    <input type="text" id="fTitle" placeholder="Song title">
+    <label for="fArtist">Artist</label>
+    <input type="text" id="fArtist" placeholder="Artist">
+    <label for="fKey">Key</label>
+    <input type="text" id="fKey" placeholder="e.g. G, D/A, Capo 2 (D)">
+    <label for="fAudio">Audio link</label>
+    <input type="text" id="fAudio" placeholder="https://…">
+    <label for="fChart">Chart link</label>
+    <input type="text" id="fChart" placeholder="https://…">
+    <p class="modal-error" id="modalError"></p>
+    <div class="modal-actions">
+      <button id="modalCancel">Cancel</button>
+      <button class="primary" id="modalSave">Save</button>
+    </div>
+  </div>
+</div>
 
-     The three rows below are examples only — replace them with your
-     real songs, then add as many more { ... } rows as you need.
-     Don't forget the comma between rows (but not after the last one).
-     ================================================================ */
-  const SONGS = [
-    {
-      title: "Come Thou Fount",
-      artist: "Traditional",
-      key: "G",
-      audio: "https://www.youtube.com/results?search_query=come+thou+fount",
-      chart: ""
-    },
-    {
-      title: "Example Song Two",
-      artist: "Example Artist",
-      key: "D",
-      audio: "",
-      chart: ""
-    },
-    {
-      title: "Example Song Three",
-      artist: "Example Artist",
-      key: "A/C#m",
-      audio: "",
-      chart: ""
-    }
-  ];
-  /* ================================================================ */
+<script>
+  // Songs are fetched live from the backend (/api/songs) — anyone visiting
+  // this page can add, edit, or delete songs and it persists for everyone.
+
+  const API = '/api/songs';
+
+  let SONGS = [];
+  let editingId = null; // null = adding a new song
 
   const rowsEl = document.getElementById('rows');
   const searchEl = document.getElementById('search');
   const countEl = document.getElementById('count');
   const emptyState = document.getElementById('emptyState');
+  const tableWrap = document.getElementById('tableWrap');
+  const loadingState = document.getElementById('loadingState');
+  const errorState = document.getElementById('errorState');
   const headers = document.querySelectorAll('thead th[data-key]');
+
+  const addBtn = document.getElementById('addBtn');
+  const modalBackdrop = document.getElementById('modalBackdrop');
+  const modalTitle = document.getElementById('modalTitle');
+  const modalError = document.getElementById('modalError');
+  const modalSave = document.getElementById('modalSave');
+  const modalCancel = document.getElementById('modalCancel');
+  const fTitle = document.getElementById('fTitle');
+  const fArtist = document.getElementById('fArtist');
+  const fKey = document.getElementById('fKey');
+  const fAudio = document.getElementById('fAudio');
+  const fChart = document.getElementById('fChart');
 
   let sortKey = 'title';
   let sortAsc = true;
@@ -313,13 +424,16 @@
     rowsEl.innerHTML = filtered.map(s => {
       const audioBtn = linkButton(s.audio, 'Audio');
       const chartBtn = linkButton(s.chart, 'Chart');
-      const links = (audioBtn + chartBtn) || '<span class="none">—</span>';
-      return `<tr>
+      return `<tr data-id="${s.id}">
         <td class="title">${escapeHtml(s.title)}</td>
         <td class="artist">${escapeHtml(s.artist)}</td>
         <td class="key">${escapeHtml(s.key)}</td>
         <td class="links">${audioBtn || '<span class="none">—</span>'}</td>
         <td class="links">${chartBtn || '<span class="none">—</span>'}</td>
+        <td class="row-actions">
+          <button class="edit-btn" data-id="${s.id}">Edit</button>
+          <button class="danger delete-btn" data-id="${s.id}">Delete</button>
+        </td>
       </tr>`;
     }).join('');
 
@@ -331,6 +445,30 @@
       const arrow = h.querySelector('.arrow');
       arrow.textContent = h.dataset.key === sortKey ? (sortAsc ? '▲' : '▼') : '';
     });
+
+    rowsEl.querySelectorAll('.edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => openModal(parseInt(btn.dataset.id, 10)));
+    });
+    rowsEl.querySelectorAll('.delete-btn').forEach(btn => {
+      btn.addEventListener('click', () => deleteSong(parseInt(btn.dataset.id, 10)));
+    });
+  }
+
+  async function loadSongs() {
+    loadingState.style.display = 'block';
+    errorState.style.display = 'none';
+    tableWrap.style.display = 'none';
+    try {
+      const res = await fetch(API);
+      if (!res.ok) throw new Error('bad response');
+      SONGS = await res.json();
+      loadingState.style.display = 'none';
+      tableWrap.style.display = '';
+      render();
+    } catch (err) {
+      loadingState.style.display = 'none';
+      errorState.style.display = 'block';
+    }
   }
 
   headers.forEach(h => {
@@ -348,11 +486,90 @@
 
   searchEl.addEventListener('input', render);
 
+  // ── Add / Edit modal ──────────────────────────────────────────────────────
+  function openModal(id) {
+    editingId = id ?? null;
+    modalError.style.display = 'none';
+    if (editingId) {
+      const s = SONGS.find(x => x.id === editingId);
+      modalTitle.textContent = 'Edit Song';
+      fTitle.value = s.title;
+      fArtist.value = s.artist;
+      fKey.value = s.key;
+      fAudio.value = s.audio;
+      fChart.value = s.chart;
+    } else {
+      modalTitle.textContent = 'Add Song';
+      fTitle.value = '';
+      fArtist.value = '';
+      fKey.value = '';
+      fAudio.value = '';
+      fChart.value = '';
+    }
+    modalBackdrop.classList.add('open');
+    fTitle.focus();
+  }
+
+  function closeModal() {
+    modalBackdrop.classList.remove('open');
+  }
+
+  addBtn.addEventListener('click', () => openModal(null));
+  modalCancel.addEventListener('click', closeModal);
+  modalBackdrop.addEventListener('click', (e) => {
+    if (e.target === modalBackdrop) closeModal();
+  });
+
+  modalSave.addEventListener('click', async () => {
+    const payload = {
+      title: fTitle.value.trim(),
+      artist: fArtist.value.trim(),
+      key: fKey.value.trim(),
+      audio: fAudio.value.trim(),
+      chart: fChart.value.trim(),
+    };
+    if (!payload.title) {
+      modalError.textContent = 'Title is required.';
+      modalError.style.display = 'block';
+      return;
+    }
+    modalSave.disabled = true;
+    try {
+      const url = editingId ? `${API}/${editingId}` : API;
+      const method = editingId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('save failed');
+      closeModal();
+      await loadSongs();
+    } catch (err) {
+      modalError.textContent = "Couldn't save — try again.";
+      modalError.style.display = 'block';
+    } finally {
+      modalSave.disabled = false;
+    }
+  });
+
+  async function deleteSong(id) {
+    const s = SONGS.find(x => x.id === id);
+    if (!confirm(`Delete "${s ? s.title : 'this song'}"?`)) return;
+    try {
+      const res = await fetch(`${API}/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('delete failed');
+      await loadSongs();
+    } catch (err) {
+      alert("Couldn't delete — try again.");
+    }
+  }
+
   document.getElementById('updated').textContent = new Date().toLocaleDateString('en-US', {
     year: 'numeric', month: 'long', day: 'numeric'
   });
 
-  render();
+  loadSongs();
 </script>
 
 </body>
