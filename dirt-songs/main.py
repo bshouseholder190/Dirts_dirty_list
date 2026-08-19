@@ -222,6 +222,39 @@ def lookup_song(title: str, artist: str = ""):
     }
 
 
+# ── Artist picker (search by title, see which artists recorded it) ──────────
+@app.get("/api/search-artists")
+def search_artists(title: str):
+    title = title.strip()
+    if len(title) < 2:
+        return {"results": []}
+    try:
+        resp = requests.get(
+            "https://itunes.apple.com/search",
+            params={"term": title, "media": "music", "entity": "song", "limit": 15},
+            timeout=5,
+        )
+        items = resp.json().get("results", [])
+    except Exception:
+        items = []
+
+    seen = set()
+    results = []
+    for item in items:
+        track = (item.get("trackName") or "").strip()
+        artist = (item.get("artistName") or "").strip()
+        if not track or not artist:
+            continue
+        dedup_key = (track.lower(), artist.lower())
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+        results.append({"title": track, "artist": artist})
+        if len(results) >= 8:
+            break
+    return {"results": results}
+
+
 # ── Serve the frontend ───────────────────────────────────────────────────────
 @app.get("/")
 def index():

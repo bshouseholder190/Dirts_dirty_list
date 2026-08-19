@@ -58,9 +58,14 @@
     margin-bottom: 16px;
   }
 
-  #search {
+  .search-wrap {
+    position: relative;
     flex: 1;
     min-width: 220px;
+  }
+
+  #search {
+    width: 100%;
     padding: 10px 14px;
     font-size: 0.95rem;
     border: 1px solid var(--line);
@@ -72,6 +77,46 @@
   #search:focus {
     outline: none;
     border-color: var(--accent);
+  }
+
+  .search-dropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: 0 12px 30px rgba(0,0,0,0.15);
+    max-height: 280px;
+    overflow-y: auto;
+    z-index: 5;
+  }
+  .search-dropdown.open { display: block; }
+
+  .search-dropdown-label {
+    padding: 8px 14px 4px;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink-soft);
+  }
+
+  .search-dropdown-item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: 0.92rem;
+  }
+  .search-dropdown-item:hover { background: var(--accent-soft); }
+  .search-dropdown-item .sdi-artist {
+    color: var(--ink-soft);
+    font-size: 0.82rem;
+    white-space: nowrap;
   }
 
   .count {
@@ -314,7 +359,10 @@
 
 <main>
   <div class="toolbar">
-    <input type="text" id="search" placeholder="Search by title, artist, or key…">
+    <div class="search-wrap">
+      <input type="text" id="search" placeholder="Search by title, artist, or key…" autocomplete="off">
+      <div class="search-dropdown" id="searchDropdown"></div>
+    </div>
     <div class="count" id="count"></div>
     <button class="add-btn" id="addBtn">+ Add Song</button>
   </div>
@@ -378,6 +426,7 @@
 
   const rowsEl = document.getElementById('rows');
   const searchEl = document.getElementById('search');
+  const searchDropdown = document.getElementById('searchDropdown');
   const countEl = document.getElementById('count');
   const emptyState = document.getElementById('emptyState');
   const tableWrap = document.getElementById('tableWrap');
@@ -494,7 +543,65 @@
     });
   });
 
-  searchEl.addEventListener('input', render);
+  // ── Search-bar artist picker (looks up other artists for a title) ─────────
+  let searchLookupRequestId = 0;
+  let searchDebounceTimer = null;
+
+  function hideSearchDropdown() {
+    searchDropdown.classList.remove('open');
+    searchDropdown.innerHTML = '';
+  }
+
+  function renderSearchDropdown(results) {
+    if (!results.length) { hideSearchDropdown(); return; }
+    searchDropdown.innerHTML =
+      '<div class="search-dropdown-label">Add from search</div>' +
+      results.map((r, i) => `
+        <div class="search-dropdown-item" data-index="${i}">
+          <span class="sdi-title">${escapeHtml(r.title)}</span>
+          <span class="sdi-artist">${escapeHtml(r.artist)}</span>
+        </div>
+      `).join('');
+    searchDropdown.classList.add('open');
+    searchDropdown.querySelectorAll('.search-dropdown-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const r = results[parseInt(item.dataset.index, 10)];
+        hideSearchDropdown();
+        searchEl.value = '';
+        render();
+        openModal(null);
+        fTitle.value = r.title;
+        fArtist.value = r.artist;
+        autoFillFromLookup();
+      });
+    });
+  }
+
+  async function fetchArtistOptions(query) {
+    const requestId = ++searchLookupRequestId;
+    try {
+      const res = await fetch(`/api/search-artists?title=${encodeURIComponent(query)}`);
+      if (requestId !== searchLookupRequestId) return; // superseded by a newer keystroke
+      if (!res.ok) { hideSearchDropdown(); return; }
+      const data = await res.json();
+      if (requestId !== searchLookupRequestId) return;
+      renderSearchDropdown(data.results || []);
+    } catch (err) {
+      hideSearchDropdown();
+    }
+  }
+
+  searchEl.addEventListener('input', () => {
+    render();
+    clearTimeout(searchDebounceTimer);
+    const query = searchEl.value.trim();
+    if (query.length < 2) { hideSearchDropdown(); return; }
+    searchDebounceTimer = setTimeout(() => fetchArtistOptions(query), 350);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.search-wrap')) hideSearchDropdown();
+  });
 
   // ── Add / Edit modal ──────────────────────────────────────────────────────
   let autofillRequestId = 0;
