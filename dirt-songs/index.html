@@ -272,6 +272,13 @@
     margin-top: 10px;
     display: none;
   }
+  .autofill-hint {
+    color: var(--ink-soft);
+    font-size: 0.78rem;
+    margin: 6px 0 0;
+    display: none;
+  }
+  .autofill-hint.visible { display: block; }
   .loading-state, .error-state {
     text-align: center;
     padding: 40px 20px;
@@ -335,6 +342,7 @@
 
 <footer>
   For Dirt · updated <span id="updated"></span>
+  · song key data via <a href="https://getsongbpm.com" target="_blank" rel="noopener">GetSongBPM.com</a>
 </footer>
 
 <div class="modal-backdrop" id="modalBackdrop">
@@ -344,6 +352,7 @@
     <input type="text" id="fTitle" placeholder="Song title">
     <label for="fArtist">Artist</label>
     <input type="text" id="fArtist" placeholder="Artist">
+    <p class="autofill-hint" id="autofillHint">Looking up key, audio, and chart info…</p>
     <label for="fKey">Key</label>
     <input type="text" id="fKey" placeholder="e.g. G, D/A, Capo 2 (D)">
     <label for="fAudio">Audio link</label>
@@ -387,6 +396,7 @@
   const fKey = document.getElementById('fKey');
   const fAudio = document.getElementById('fAudio');
   const fChart = document.getElementById('fChart');
+  const autofillHint = document.getElementById('autofillHint');
 
   let sortKey = 'title';
   let sortAsc = true;
@@ -487,9 +497,36 @@
   searchEl.addEventListener('input', render);
 
   // ── Add / Edit modal ──────────────────────────────────────────────────────
+  let autofillRequestId = 0;
+
+  async function autoFillFromLookup() {
+    const title = fTitle.value.trim();
+    if (!title) return;
+    const artist = fArtist.value.trim();
+    const requestId = ++autofillRequestId;
+    autofillHint.classList.add('visible');
+    try {
+      const params = new URLSearchParams({ title });
+      if (artist) params.set('artist', artist);
+      const res = await fetch(`/api/lookup?${params}`);
+      if (requestId !== autofillRequestId) return; // a newer lookup superseded this one
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!fAudio.value.trim() && data.audio) fAudio.value = data.audio;
+      if (!fChart.value.trim() && data.chart) fChart.value = data.chart;
+      if (!fKey.value.trim() && data.key) fKey.value = data.key;
+    } catch (err) {
+      // network error — leave fields as-is, user can fill manually
+    } finally {
+      if (requestId === autofillRequestId) autofillHint.classList.remove('visible');
+    }
+  }
+
   function openModal(id) {
     editingId = id ?? null;
     modalError.style.display = 'none';
+    autofillHint.classList.remove('visible');
+    autofillRequestId++; // cancel any in-flight lookup from a previous open
     if (editingId) {
       const s = SONGS.find(x => x.id === editingId);
       modalTitle.textContent = 'Edit Song';
@@ -519,6 +556,9 @@
   modalBackdrop.addEventListener('click', (e) => {
     if (e.target === modalBackdrop) closeModal();
   });
+
+  fTitle.addEventListener('blur', autoFillFromLookup);
+  fArtist.addEventListener('blur', autoFillFromLookup);
 
   modalSave.addEventListener('click', async () => {
     const payload = {
